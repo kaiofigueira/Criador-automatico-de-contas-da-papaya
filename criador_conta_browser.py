@@ -50,6 +50,24 @@ class CriadorContaBrowser():
         
         self.usuario_conta = usuario_conta
 
+    def verificar_ipblock(self):
+        div_xpath = '//*[@id="toast-container"]/div/div'
+        try:
+            # Espera até que o div com o xpath especificado esteja presente na página
+            div_element = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, div_xpath))
+            )
+            # Verifica se o texto do elemento contém a mensagem de bloqueio
+            if "Sign up not allowed. Please contact our support." in div_element.text:
+                print("Cadastro bloqueado: IP bloqueado ou problema relacionado.")
+                return True
+            else:
+                print("Cadastro permitido.")
+                return False
+        except TimeoutException:
+            print("Mensagem de bloqueio não apareceu dentro do tempo especificado.")
+            return False
+
     def obter_email_temporario(self):
         self.site_email_temporario = 'https://www.invertexto.com/gerador-email-temporario'
         self.entrar_site(self.site_email_temporario)
