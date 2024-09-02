@@ -1,3 +1,4 @@
+import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -39,7 +40,9 @@ class CriadorContaBrowser():
         if not campo_checkbox.is_selected():
             self.driver.execute_script("arguments[0].click();", campo_checkbox)
 
-        self.esperar_resolucao_captcha()
+        # Chama a função de esperar resolução do CAPTCHA
+        if not self.verificar_resolucao_captcha():
+            return False  # Retorna False se "Try again later" for detectado
 
         button = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '/html/body/div[4]/div/div[2]/div/form/button'))
@@ -49,6 +52,7 @@ class CriadorContaBrowser():
         button.click()
         
         self.usuario_conta = usuario_conta
+        return True  # Retorna True se a criação da conta continuar normalmente
 
     def verificar_ipblock(self):
         div_xpath = '//*[@id="toast-container"]/div/div'
@@ -67,7 +71,25 @@ class CriadorContaBrowser():
         except TimeoutException:
             print("Mensagem de bloqueio não apareceu dentro do tempo especificado.")
             return False
-
+        
+    def verificar_try_again_captcha(self):
+        captcha_try_again_xpath = '//div[@class="rc-doscaptcha-header"]//div[@class="rc-doscaptcha-header-text"]'
+        try:
+            # Espera até que o elemento com a classe especificada esteja presente na página
+            captcha_element = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, captcha_try_again_xpath))
+            )
+            # Verifica se o texto do elemento contém "Try again later"
+            if "Try again later" in captcha_element.text:
+                print("Captcha detectado: Try again later.")
+                return True
+            else:
+                print("Captcha presente, mas o texto não corresponde.")
+                return False
+        except TimeoutException:
+            print("Try again não detectado dentro do tempo especificado.")
+            return False
+        
     def obter_email_temporario(self):
         self.site_email_temporario = 'https://www.invertexto.com/gerador-email-temporario'
         self.entrar_site(self.site_email_temporario)
@@ -160,32 +182,42 @@ class CriadorContaBrowser():
             except Exception as e:
                 print(f'Erro ao cadastrar conta')
 
-    def esperar_resolucao_captcha(self, timeout=1200):
+    def verificar_resolucao_captcha(self, timeout=1200, check_interval=30):
         try:
-            # Espera até que o iframe do reCAPTCHA esteja disponível e faz a troca para ele
             WebDriverWait(self.driver, timeout).until(
                 EC.frame_to_be_available_and_switch_to_it((By.CSS_SELECTOR, "iframe[title='reCAPTCHA']"))
             )
             
-            # Espera até que o elemento do CAPTCHA esteja presente
             captcha = WebDriverWait(self.driver, timeout).until(
                 EC.presence_of_element_located((By.ID, "recaptcha-anchor"))
             )
 
             print("Resolvendo o reCAPTCHA")
 
-            # Espera até que a classe 'recaptcha-checkbox-checked' apareça
-            WebDriverWait(self.driver, timeout).until(
-                lambda d: "recaptcha-checkbox-checked" in captcha.get_attribute("class")
-            )
-            
-            print("reCAPTCHA foi verificado com sucesso!")
+            start_time = time.time()
+
+            while True:
+                if "recaptcha-checkbox-checked" in captcha.get_attribute("class"):
+                    print("reCAPTCHA foi verificado com sucesso!")
+                    return True  # Retorna False se o CAPTCHA foi verificado com sucesso
+                
+                elapsed_time = time.time() - start_time
+                if elapsed_time > timeout:
+                    raise TimeoutException("Tempo limite alcançado ou o reCAPTCHA não foi verificado dentro do tempo especificado.")
+
+                if elapsed_time % check_interval < 1:
+                    if self.verificar_try_again_captcha():
+                        print("Captcha detectou 'Try again later'.")
+                        return False  # Retorna True se "Try again later" foi detectado
+                
+                time.sleep(1)
 
         except TimeoutException:
             print("Tempo limite alcançado ou o reCAPTCHA não foi verificado dentro do tempo especificado.")
+            return False  # Considera como um "Try again later" se o tempo expirar
         
-        # Retorna ao contexto principal da página
-        self.driver.switch_to.default_content()
+        finally:
+            self.driver.switch_to.default_content()
 
     def validar_caminho(path: str):
         if not os.path.isfile(path):
