@@ -2,13 +2,21 @@ import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import os
-from selenium.common.exceptions import TimeoutException
+import os        
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 
-class CriadorContaBrowser():
+class CriadorConta():
 
     def __init__(self, driver) -> None:
         self.driver = driver
+        self.usuario_conta = None
+        self.email_temporario = None
+        self.site_email_temporario = 'https://www.invertexto.com/gerador-email-temporario'
+        self.site_papaya = 'https://www.papayaplay.com/account/signup.do'
+        
+    def fechar_driver(self, mensagem: str) -> None:
+        print(mensagem)
+        self.driver.quit()
 
     def adicionar_conta_txt(self):
         arquivo_txt = f'../contas/contas_criadas.txt'
@@ -25,7 +33,7 @@ class CriadorContaBrowser():
         self.driver.get(site)
 
     def cadastrar_conta_papaya(self):
-        self.entrar_site('https://www.papayaplay.com/account/signup.do')
+        self.entrar_site(self.site_papaya)
         campo_usuario = self.driver.find_element(By.NAME, 'userid')
         campo_email = self.driver.find_element(By.ID, 'equalEmail')
         campo_confirma_email = self.driver.find_element(By.ID, 'confirmEmail')
@@ -41,8 +49,7 @@ class CriadorContaBrowser():
             self.driver.execute_script("arguments[0].click();", campo_checkbox)
 
         # Chama a função de esperar resolução do CAPTCHA
-        if not self.verificar_resolucao_captcha():
-            return False  # Retorna False se "Try again later" for detectado
+        self.verificar_resolucao_captcha()
 
         button = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '/html/body/div[4]/div/div[2]/div/form/button'))
@@ -52,7 +59,6 @@ class CriadorContaBrowser():
         button.click()
         
         self.usuario_conta = usuario_conta
-        return True  # Retorna True se a criação da conta continuar normalmente
 
     def verificar_ipblock(self):
         div_xpath = '//*[@id="toast-container"]/div/div'
@@ -69,29 +75,45 @@ class CriadorContaBrowser():
                 print("Cadastro permitido.")
                 return False
         except TimeoutException:
-            print("Mensagem de bloqueio não apareceu dentro do tempo especificado.")
+            print("Mensagem de bloqueio de ip não apareceu dentro do tempo especificado.")
             return False
-        
+
     def verificar_try_again_captcha(self):
-        captcha_try_again_xpath = '//div[@class="rc-doscaptcha-header"]//div[@class="rc-doscaptcha-header-text"]'
         try:
-            # Espera até que o elemento com a classe especificada esteja presente na página
-            captcha_element = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, captcha_try_again_xpath))
+            # Espera até que o iframe esteja presente e alterna o contexto para ele
+            iframe = WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.XPATH, '/html/body/div[5]/div[4]/iframe'))
             )
-            # Verifica se o texto do elemento contém "Try again later"
-            if "Try again later" in captcha_element.text:
-                print("Captcha detectado: Try again later.")
-                return True
-            else:
-                print("Captcha presente, mas o texto não corresponde.")
+            self.driver.switch_to.frame(iframe)
+            
+            try:
+                # Espera até que o elemento com a classe 'rc-doscaptcha-header-text' esteja presente dentro do iframe
+                captcha_header = WebDriverWait(self.driver, 20).until(
+                    EC.presence_of_element_located((By.XPATH, '//div[contains(@class, "rc-doscaptcha-header-text")]'))
+                )
+                
+                # Verifica se o texto do elemento contém "Try again later"
+                if "Try again later" in captcha_header.text:
+                    print("Captcha detectado: Try again later.")
+                    return True
+                else:
+                    print(f"Texto do captcha: {captcha_header.text}")
+                    return False
+            except NoSuchElementException:
+                #print("Elemento com a classe 'rc-doscaptcha-header-text' não encontrado dentro do iframe.")
                 return False
+            except StaleElementReferenceException:
+                #print("Elemento com a classe 'rc-doscaptcha-header-text' tornou-se obsoleto.")
+                return False
+            finally:
+                # Retorna ao contexto principal do documento
+                self.driver.switch_to.default_content()
+
         except TimeoutException:
-            print("Try again não detectado dentro do tempo especificado.")
+            #print("Tempo limite excedido ao tentar encontrar o iframe ou o elemento dentro do iframe.")
             return False
-        
+
     def obter_email_temporario(self):
-        self.site_email_temporario = 'https://www.invertexto.com/gerador-email-temporario'
         self.entrar_site(self.site_email_temporario)
         email_element = self.driver.find_element(By.ID, 'email-input')
         email_temporario = email_element.get_attribute('value')
@@ -99,21 +121,27 @@ class CriadorContaBrowser():
 
         self.email_temporario = email_temporario
 
-    def esperar_recebimento_email(self, tbody_xpath, timeout=360):
+    def verificar_recebimento_email(self, tbody_xpath, timeout=360):
+        print("Verificando recebimento de e-mail")
         # Espera até que um novo email apareça na tabela de emails
         try:
             WebDriverWait(self.driver, timeout).until(
                 EC.presence_of_element_located((By.XPATH, tbody_xpath + '/tr'))
             )
             print("e-mail recebido")
+            return True
         except TimeoutException:
             print(f"O email não foi recebido dentro de {timeout} segundos.")
-            return
+            return False
+        
+        return False
 
-    def clicar_email(self, timeout=180):
+    def clicar_email(self):
+        print("Clicando no e-mail")
         tbody_xpath = '/html/body/main/div[1]/div[3]/div[1]/table/tbody'
 
-        self.esperar_recebimento_email(tbody_xpath)
+        if not self.verificar_recebimento_email(tbody_xpath):
+            return False
 
         tbody_element = self.driver.find_element(By.XPATH, tbody_xpath)
         tr_elements = tbody_element.find_elements(By.XPATH, './tr')
@@ -123,6 +151,7 @@ class CriadorContaBrowser():
                 element_id = tr_element.get_attribute('id')
                 if element_id:
                     print(f'ID encontrado: {element_id}')
+
                     script = """
                         var element = arguments[0];
                         if (element) {
@@ -130,57 +159,72 @@ class CriadorContaBrowser():
                         }
                     """
                     self.driver.execute_script(script, tr_element)
-                    break
+                    return True
             except Exception as e:
                 print(f'Erro ao encontrar o ID: {e}')
-
-        # Espera até que o elemento do email clicado esteja presente na página
-        try:
-            WebDriverWait(self.driver, timeout).until(
-                EC.presence_of_element_located((By.XPATH, f'//*[@id="{element_id}"]'))
-            )
-        except TimeoutException:
-            print("Falha ao clicar no email ou o email não foi carregado corretamente.")
+                return False
+            
+        return False
 
     def clicar_link(self):
-        shadow_host_xpath = '//*[@id="body"]'
-        shadow_host = self.driver.find_element(By.XPATH, shadow_host_xpath)
+        print("Clicando no link de confirmação de registro")
+        try:
+            shadow_host_xpath = '//*[@id="body"]'
+            shadow_host = self.driver.find_element(By.XPATH, shadow_host_xpath)
 
-        script_shadow = """
-            var shadowHost = arguments[0];
-            var shadowRoot = shadowHost.shadowRoot;
-            if (shadowRoot) {
-                return Array.from(shadowRoot.querySelectorAll('a')).map(a => a.href);
-            }
-            return [];
-        """
-        links = self.driver.execute_script(script_shadow, shadow_host)
+            script_shadow = """
+                var shadowHost = arguments[0];
+                var shadowRoot = shadowHost.shadowRoot;
+                if (shadowRoot) {
+                    return Array.from(shadowRoot.querySelectorAll('a')).map(a => a.href);
+                }
+                return [];
+            """
+            links = self.driver.execute_script(script_shadow, shadow_host)
 
-        if links:
-            first_link = links[0]
-            print(f"Primeiro link encontrado: {first_link}")
-            self.entrar_site(first_link)
-        else:
-            print("Nenhum link encontrado.")
+            if links:
+                first_link = links[0]
+                print(f"Primeiro link encontrado: {first_link}")
+                self.entrar_site(first_link)
+            else:
+                print("Nenhum link encontrado.")
+            
+            return True
+        except Exception as e:
+            print(f"Erro na etapa de clicar no link: {e}")
+            return False
+        
+        return False
+        
 
     def validar_email_apos_criar_conta_papaya(self):
+        print("Validando e-mail após criação da conta no papaya")
         self.entrar_site(self.site_email_temporario + f"?email={self.email_temporario}")
     
-        self.clicar_email()
-        self.clicar_link()
+        if not self.clicar_email():
+            return False
+        
+        if not self.clicar_link():
+            return False
+
+        return True
 
     def validar_criacao_conta_papaya(self):
+        print("Validando criação da conta no papaya")
         body_element = self.driver.find_element(By.ID, "portal")
         h2_elements = body_element.find_elements(By.XPATH, '//*[@id="sign-up-complete"]/div/h2')
 
         for h2_element in h2_elements:
             try:
-                h2_value = h2_element.get_attribute('value')
-                if h2_value == "Sign Up Completed":
+                h2_text = h2_element.text
+                if h2_text == "Sign Up Completed":
                     print("Conta cadastrada com sucesso")
-                    break
+                    return True
             except Exception as e:
-                print(f'Erro ao cadastrar conta')
+                print(f'Erro ao cadastrar conta: {e}')
+                return False
+        
+        return False
 
     def verificar_resolucao_captcha(self, timeout=1200, check_interval=30):
         try:
@@ -194,27 +238,32 @@ class CriadorContaBrowser():
 
             print("Resolvendo o reCAPTCHA")
 
-            start_time = time.time()
+            # start_time = time.time()
 
             while True:
                 if "recaptcha-checkbox-checked" in captcha.get_attribute("class"):
                     print("reCAPTCHA foi verificado com sucesso!")
                     return True  # Retorna False se o CAPTCHA foi verificado com sucesso
                 
-                elapsed_time = time.time() - start_time
-                if elapsed_time > timeout:
-                    raise TimeoutException("Tempo limite alcançado ou o reCAPTCHA não foi verificado dentro do tempo especificado.")
+                # elapsed_time = time.time() - start_time
+                # if elapsed_time > timeout:
+                #     raise TimeoutException("Tempo limite alcançado ou o reCAPTCHA não foi verificado dentro do tempo especificado.")
 
-                if elapsed_time % check_interval < 1:
-                    if self.verificar_try_again_captcha():
-                        print("Captcha detectou 'Try again later'.")
-                        return False  # Retorna True se "Try again later" foi detectado
+                # if elapsed_time % check_interval < 1:
+                #     if self.verificar_try_again_captcha():
+                #         print("Captcha detectou 'Try again later'.")
+                #         return False  # Retorna True se "Try again later" foi detectado
                 
                 time.sleep(1)
 
         except TimeoutException:
             print("Tempo limite alcançado ou o reCAPTCHA não foi verificado dentro do tempo especificado.")
             return False  # Considera como um "Try again later" se o tempo expirar
+        # except Exception as e:
+        #     print("te encontrei")
+        #     print("")
+        #     print(e)
+        #     return False
         
         finally:
             self.driver.switch_to.default_content()
