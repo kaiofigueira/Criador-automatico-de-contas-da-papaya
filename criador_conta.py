@@ -66,7 +66,7 @@ class CriadorConta():
         )
 
         self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
-        button.click()
+        self.driver.execute_script("arguments[0].click();", button)
         
         self.usuario_conta = usuario_conta
 
@@ -258,7 +258,7 @@ class CriadorConta():
             )
 
             print("Resolvendo o reCAPTCHA")
-            
+
             while True:
                 if "recaptcha-checkbox-checked" in captcha.get_attribute("class"):
                     print("reCAPTCHA foi verificado com sucesso!")
