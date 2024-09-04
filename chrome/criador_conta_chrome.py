@@ -14,6 +14,8 @@ class CriadorContaChrome(CriadorConta):
     def fechar_browser(self, mensagem):
         super().fechar_driver(mensagem)
         self.close_chrome_instances()
+        print()
+        print()        
 
     @staticmethod
     def close_chrome_instances():
@@ -50,8 +52,6 @@ class CriadorContaChrome(CriadorConta):
                     
                     super().adicionar_conta_txt()
                     self.fechar_browser(f"Quantidade de contas geradas: {i}")
-                    print()
-                    print()
                     break
 
                 except Exception as e:
