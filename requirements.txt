@@ -19,3 +19,4 @@ urllib3
 ipykernel
 http-request-randomizer
 operagxdriver
+webdriver-manager

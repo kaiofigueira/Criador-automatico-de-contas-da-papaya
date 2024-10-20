@@ -3,6 +3,7 @@ from selenium import webdriver
 from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from criador_conta import CriadorConta
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 class CriadorContaEdge(CriadorConta):
 
@@ -28,8 +29,8 @@ class CriadorContaEdge(CriadorConta):
             print(f"Erro ao fechar as instâncias do Chrome: {e}")
 
     def obter_driver(self):
-        self.driver = webdriver.Edge(service=EdgeService(executable_path=self.driver_path), options=self.options)
-        super().__init__(self.driver)  # Agora inicializa o driver na classe base
+        self.driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()), options=self.options)
+        super().__init__(self.driver)
 
     def criar_conta(self, qtd_contas_criacao: int) -> None:
         for i in range(1, qtd_contas_criacao + 1):
